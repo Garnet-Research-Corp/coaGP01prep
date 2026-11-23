@@ -1,8 +1,12 @@
-// coaGP01prep - one-time setup check for a PC that will run the GP01 backup agent (cwaGP01baks,
-// normally started through the mauGP01wrap launcher): confirms the .NET Desktop Runtime (needed by
-// the launcher itself), the ASP.NET Core Runtime (needed by cwaGP01baks/cwaGP01msql), and a Windows
-// Firewall rule for cwaGP01baks's port are all in place - installing/fixing whatever is missing.
-// Meant to be copied to each site PC and double-clicked before mauGP01wrap is installed there: no
+// coaGP01prep - one-time setup check for any PC in the TugAssist backup/restore fleet: GP01 itself
+// (runs cwaGP01msql, the one central restore target) and each of the 6 live TugAssist/MSSQL servers
+// (each runs cwaGP01baks, pushing its backups to \\garnet.lan\tugit for GP01 to restore from).
+// cwaGP01baks and cwaGP01msql never run on the same machine, and both are configured to listen on
+// the SAME port (see Gp01AgentPort below) - so one port check, run unchanged on all 7 machines,
+// covers whichever of the two is actually installed there. Also confirms the .NET Desktop Runtime
+// (needed by the mauGP01wrap launcher) and the ASP.NET Core Runtime (needed by either app) are in
+// place - installing/fixing whatever is missing.
+// Meant to be copied to each machine and double-clicked before mauGP01wrap is installed there: no
 // prompts, it just runs, fixes what it can, and reports pass/fail.
 //
 // Double-click coaGP01prep.exe:
@@ -18,10 +22,11 @@
 //
 // Every run is appended to coaGP01prep.log next to the exe (or in %TEMP%).
 //
-// NOTE: cwaGP01baks's actual configured port is 38081 (its appsettings.json and mauGP01wrap's
-// apps.json - the launcher starts it with --urls overriding to the apps.json port, so that's the
-// one that actually matters at runtime). Change Gp01BaksPort below if that's ever meant to differ.
-// (It was 38110 before 2026-11-22 - renumbered, not a typo this time.)
+// NOTE: cwaGP01baks's AND cwaGP01msql's actual configured port is 38081 (both apps' own
+// appsettings.json, and mauGP01wrap's apps.json - the launcher starts each with --urls overriding
+// to the apps.json port, so that's the one that actually matters at runtime). Deliberately the same
+// port for both, since they never coexist on one machine. Change Gp01AgentPort below if that's ever
+// meant to differ. (Was 38110/38111 before 2026-11-22 - renumbered, not a typo.)
 
 #:property TargetFramework=net10.0-windows
 #:property PublishAot=false
@@ -30,15 +35,15 @@
 #:property IncludeNativeLibrariesForSelfExtract=true
 #:property RuntimeIdentifier=win-x64
 #:property DebugType=embedded
-#:property Version=1.0.1
+#:property Version=1.1.0
 #:property SourceRevisionId=$([System.DateTime]::Now.ToString('yyyy-MM-dd HH:mm'))
 
 using System.Diagnostics;
 using System.Security.Principal;
 
 const int RequiredMajor = 10;
-const int Gp01BaksPort = 38081;
-const string FirewallRuleName = "coaGP01prep - GP01 Backup (TCP 38081)";
+const int Gp01AgentPort = 38081;
+const string FirewallRuleName = "coaGP01prep - TugAssist Agent (TCP 38081)";
 const string DesktopRuntimeUrl = "https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x64.exe";
 const string AspNetRuntimeUrl = "https://aka.ms/dotnet/10.0/aspnetcore-runtime-win-x64.exe";
 
@@ -70,7 +75,7 @@ try
                 if (!EnsureAdmin(cmd, interactive)) return 0;
                 if (needDesktop) DownloadAndInstall(DesktopRuntimeUrl, ".NET Desktop Runtime");
                 if (needAspNet) DownloadAndInstall(AspNetRuntimeUrl, "ASP.NET Core Runtime");
-                if (needFirewall) AddFirewallRule(FirewallRuleName, Gp01BaksPort);
+                if (needFirewall) AddFirewallRule(FirewallRuleName, Gp01AgentPort);
             }
             break;
         case "status": interactive = false; break;
@@ -112,7 +117,7 @@ static bool Checklist()
     {
         FxItem("Microsoft.WindowsDesktop.App", ".NET Desktop Runtime (for mauGP01wrap)"),
         FxItem("Microsoft.AspNetCore.App", "ASP.NET Core Runtime (for cwaGP01baks/msql)"),
-        (FirewallRuleExists(FirewallRuleName), $"Firewall: TCP {Gp01BaksPort} inbound",
+        (FirewallRuleExists(FirewallRuleName), $"Firewall: TCP {Gp01AgentPort} inbound (baks/msql)",
             FirewallRuleExists(FirewallRuleName) ? "allowed" : "BLOCKED - no inbound rule"),
     };
     var good = items.All(i => i.ok);
@@ -130,7 +135,7 @@ static bool Checklist()
     Console.WriteLine();
     Console.ForegroundColor = good ? ConsoleColor.Green : ConsoleColor.Yellow;
     Console.WriteLine(good
-        ? "STATUS: GOOD - this PC is ready for mauGP01wrap / cwaGP01baks."
+        ? "STATUS: GOOD - this PC is ready for mauGP01wrap / cwaGP01baks / cwaGP01msql."
         : "STATUS: NOT FINISHED - see the items marked FAIL above (re-run coaGP01prep, or fix by hand).");
     Console.ResetColor();
     return good;
