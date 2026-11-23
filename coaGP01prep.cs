@@ -18,8 +18,10 @@
 //
 // Every run is appended to coaGP01prep.log next to the exe (or in %TEMP%).
 //
-// NOTE: cwaGP01baks's actual configured port is 38110 (its appsettings.json), not 38011 - checked
-// against the source and corrected here. Change Gp01BaksPort below if that's ever meant to differ.
+// NOTE: cwaGP01baks's actual configured port is 38081 (its appsettings.json and mauGP01wrap's
+// apps.json - the launcher starts it with --urls overriding to the apps.json port, so that's the
+// one that actually matters at runtime). Change Gp01BaksPort below if that's ever meant to differ.
+// (It was 38110 before 2026-11-22 - renumbered, not a typo this time.)
 
 #:property TargetFramework=net10.0-windows
 #:property PublishAot=false
@@ -28,15 +30,15 @@
 #:property IncludeNativeLibrariesForSelfExtract=true
 #:property RuntimeIdentifier=win-x64
 #:property DebugType=embedded
-#:property Version=1.0.0
+#:property Version=1.0.1
 #:property SourceRevisionId=$([System.DateTime]::Now.ToString('yyyy-MM-dd HH:mm'))
 
 using System.Diagnostics;
 using System.Security.Principal;
 
 const int RequiredMajor = 10;
-const int Gp01BaksPort = 38110;
-const string FirewallRuleName = "coaGP01prep - GP01 Backup (TCP 38110)";
+const int Gp01BaksPort = 38081;
+const string FirewallRuleName = "coaGP01prep - GP01 Backup (TCP 38081)";
 const string DesktopRuntimeUrl = "https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x64.exe";
 const string AspNetRuntimeUrl = "https://aka.ms/dotnet/10.0/aspnetcore-runtime-win-x64.exe";
 
