@@ -35,7 +35,7 @@
 #:property IncludeNativeLibrariesForSelfExtract=true
 #:property RuntimeIdentifier=win-x64
 #:property DebugType=embedded
-#:property Version=1.1.0
+#:property Version=1.2.0
 #:property SourceRevisionId=$([System.DateTime]::Now.ToString('yyyy-MM-dd HH:mm'))
 
 using System.Diagnostics;
@@ -82,6 +82,7 @@ try
         default: Console.WriteLine("Usage: coaGP01prep [apply | status]"); return 1;
     }
     good = Checklist();
+    ListOpenFirewallPorts();
 }
 catch (Exception ex)
 {
@@ -242,6 +243,71 @@ static void AddFirewallRule(string name, int port)
     catch (Exception ex)
     {
         Console.WriteLine($"  Could not add the firewall rule: {ex.Message}");
+    }
+}
+
+// Purely informational (not part of the pass/fail checklist) - a sanity-check dump of what's
+// actually allowed inbound on a fresh PC before cwaGP01baks/msql goes on it, so a port conflict or
+// an unexpectedly-wide-open rule is visible up front instead of discovered later. Only enabled,
+// inbound, allow rules - the hundreds of disabled built-in Windows rules would just be noise here.
+static void ListOpenFirewallPorts()
+{
+    Console.WriteLine();
+    Console.WriteLine("Open inbound firewall rules (enabled + allow):");
+    try
+    {
+        var psi = new ProcessStartInfo("netsh.exe", "advfirewall firewall show rule name=all dir=in")
+            { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+        using var p = Process.Start(psi)!;
+        var output = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+        if (p.ExitCode != 0)
+        {
+            Console.WriteLine($"  Could not list firewall rules (netsh exited with code {p.ExitCode}).");
+            return;
+        }
+
+        // Each rule is a "Key:   Value" block separated by blank lines - no JSON mode in netsh.
+        var rows = new List<(string Name, string Protocol, string Port)>();
+        string? name = null, enabled = null, direction = null, protocol = null, localPort = null, action = null;
+        void FlushRule()
+        {
+            if (name is not null && enabled == "Yes" && direction == "In" && action == "Allow")
+                rows.Add((name, protocol ?? "Any", localPort ?? "Any"));
+            name = enabled = direction = protocol = localPort = action = null;
+        }
+        foreach (var raw in output.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            if (string.IsNullOrWhiteSpace(line)) { FlushRule(); continue; }
+            var parts = line.Split(':', 2);
+            if (parts.Length != 2) continue;
+            var key = parts[0].Trim();
+            var val = parts[1].Trim();
+            switch (key)
+            {
+                case "Rule Name": name = val; break;
+                case "Enabled": enabled = val; break;
+                case "Direction": direction = val; break;
+                case "Protocol": protocol = val; break;
+                case "LocalPort": localPort = val; break;
+                case "Action": action = val; break;
+            }
+        }
+        FlushRule();
+
+        // TCP/UDP with an actual port, not "Any" - excludes the mass of per-app identity rules
+        // (Xbox, Teams, Store apps, etc.) that are allowed by program path rather than by port, and
+        // non-TCP/UDP protocol rules (IGMP, IPv6 tunnelling) - neither answers "what ports are open".
+        var portRows = rows.Where(r => r.Port != "Any" && r.Protocol is "TCP" or "UDP").ToList();
+        if (portRows.Count == 0) { Console.WriteLine("  (none found)"); return; }
+        foreach (var r in portRows.OrderBy(r => r.Protocol).ThenBy(r => r.Port))
+            Console.WriteLine($"  {r.Protocol,-4} {r.Port,-14} {r.Name}");
+        Console.WriteLine($"  {portRows.Count} rule(s) with a specific port ({rows.Count - portRows.Count} app/protocol-based rule(s) not shown).");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"  Could not list firewall rules: {ex.Message}");
     }
 }
 
